@@ -7,6 +7,10 @@
   "editorType": ["figma"],
   "documentAccess": "dynamic-page",
   "networkAccess": {
-    "allowedDomains": ["none"]
+    "allowedDomains": [
+      "http://localhost:8787",
+      "http://127.0.0.1:8787"
+    ],
+    "reasoning": "Talks to the local capture service (capture-server/) that renders a URL in headless Chrome. Nothing is sent anywhere else."
   }
 }

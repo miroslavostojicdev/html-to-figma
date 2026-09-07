@@ -7,9 +7,42 @@
   }
   h1 { font-size: 14px; margin: 0 0 4px; }
   .sub { color: var(--figma-color-text-secondary, #777); margin: 0 0 14px; }
+
+  .tabs { display: flex; gap: 4px; margin-bottom: 14px; }
+  .tab {
+    flex: 1; padding: 7px 10px; text-align: center; cursor: pointer;
+    border-radius: 7px; font-weight: 600;
+    background: var(--figma-color-bg-secondary, #f0f0f0);
+    color: var(--figma-color-text-secondary, #777);
+    user-select: none;
+  }
+  .tab.on { background: #4f6df5; color: #fff; }
+  .panel { display: none; }
+  .panel.on { display: block; }
+
+  label.field { display: block; margin-bottom: 10px; }
+  label.field span { display: block; margin-bottom: 4px; color: var(--figma-color-text-secondary, #777); }
+  input[type=url], select {
+    width: 100%; box-sizing: border-box; padding: 7px 8px;
+    border: 1px solid var(--figma-color-border, #d5d5d5); border-radius: 6px;
+    background: var(--figma-color-bg, #fff); color: var(--figma-color-text, #111);
+    font: 12.5px "Inter", system-ui, sans-serif;
+  }
+  .row { display: flex; gap: 8px; }
+  .row > * { flex: 1; }
+  button.go {
+    width: 100%; padding: 9px 12px; margin-top: 2px;
+    border: 0; border-radius: 7px; cursor: pointer;
+    font: 600 13px "Inter", system-ui, sans-serif;
+    background: #4f6df5; color: #fff;
+  }
+  button.go:disabled { opacity: .5; cursor: default; }
+  label.check { display: flex; align-items: center; gap: 7px; margin: 8px 0 10px; color: var(--figma-color-text-secondary, #777); }
+  label.check input { margin: 0; }
+
   #drop {
     border: 1.5px dashed var(--figma-color-border, #c9c9c9);
-    border-radius: 10px; padding: 34px 16px; text-align: center;
+    border-radius: 10px; padding: 30px 16px; text-align: center;
     cursor: pointer; transition: border-color .15s, background .15s;
     color: var(--figma-color-text-secondary, #777);
   }
@@ -17,6 +50,7 @@
   #drop b { color: var(--figma-color-text, #111); display: block; margin-bottom: 4px; font-size: 13px; }
   #drop.hover b { color: #4f6df5; }
   input[type=file] { display: none; }
+
   #status { margin-top: 14px; min-height: 40px; white-space: pre-wrap; }
   #status.err { color: #e05555; }
   #status.ok { color: #1d9f5a; }
@@ -25,26 +59,150 @@
   .bar i { display: block; height: 100%; width: 40%; background: #4f6df5; border-radius: 2px; animation: slide 1.1s ease-in-out infinite; }
   @keyframes slide { 0% { margin-left: -40%; } 100% { margin-left: 100%; } }
   .hint { margin-top: 14px; font-size: 11px; color: var(--figma-color-text-tertiary, #999); }
+  code { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 11px; }
 </style>
 
 <h1>HTML to Figma Importer</h1>
-<p class="sub">Import a <b>.h2f</b> capture made with the companion Chrome extension.</p>
+<p class="sub">Import a webpage straight from its URL, or drop a <b>.h2f</b> capture file.</p>
 
-<div id="drop">
-  <b>Drop your .h2f file here</b>
-  or click to browse
+<div class="tabs">
+  <div class="tab on" id="tab-url">From URL</div>
+  <div class="tab" id="tab-file">From file</div>
 </div>
-<input type="file" id="file" accept=".h2f,.json,application/json,application/gzip">
+
+<div class="panel on" id="panel-url">
+  <label class="field">
+    <span>Page URL</span>
+    <input type="url" id="url" placeholder="https://example.com" spellcheck="false">
+  </label>
+  <div class="row">
+    <label class="field">
+      <span>Screen size</span>
+      <select id="size">
+        <option value="1920x1080" selected>1920 × 1080 — Desktop</option>
+        <option value="1600x900">1600 × 900 — Desktop</option>
+        <option value="1440x900">1440 × 900 — Laptop</option>
+        <option value="1366x768">1366 × 768 — Laptop</option>
+        <option value="1280x800">1280 × 800</option>
+        <option value="1024x768">1024 × 768 — Tablet landscape</option>
+        <option value="834x1112">834 × 1112 — iPad Air</option>
+        <option value="768x1024">768 × 1024 — Tablet</option>
+        <option value="430x932">430 × 932 — Phone L</option>
+        <option value="390x844">390 × 844 — Phone</option>
+        <option value="375x812">375 × 812 — Phone S</option>
+      </select>
+    </label>
+  </div>
+  <label class="check"><input type="checkbox" id="images" checked> Include images</label>
+  <label class="check"><input type="checkbox" id="offscreen" checked> Include off-screen carousel slides</label>
+  <button class="go" id="grab">Import page</button>
+  <p class="hint">
+    Needs the local capture service running:<br>
+    <code>node capture-server/server.js</code>
+  </p>
+</div>
+
+<div class="panel" id="panel-file">
+  <div id="drop">
+    <b>Drop your .h2f file here</b>
+    or click to browse
+  </div>
+  <input type="file" id="file" accept=".h2f,.json,application/json,application/gzip">
+  <p class="hint">Capture pages with the “HTML to Figma Capturer” Chrome extension — use this for pages behind a login.</p>
+</div>
+
 <div class="bar" id="bar"><i></i></div>
 <div id="status"></div>
-<p class="hint">Capture pages with the “HTML to Figma Capturer” Chrome extension — it saves a .h2f file to your Downloads folder.</p>
 
 <script>
-  const drop = document.getElementById('drop');
-  const fileInput = document.getElementById('file');
+  const SERVICE = 'http://localhost:8787';
+
   const statusEl = document.getElementById('status');
   const bar = document.getElementById('bar');
+  const drop = document.getElementById('drop');
+  const fileInput = document.getElementById('file');
+  const grab = document.getElementById('grab');
+  const urlInput = document.getElementById('url');
+  const sizeSel = document.getElementById('size');
+  const chkImages = document.getElementById('images');
+  const chkOffscreen = document.getElementById('offscreen');
   let working = false;
+
+  // tabs
+  const tabs = [['tab-url', 'panel-url'], ['tab-file', 'panel-file']];
+  for (const [t, p] of tabs) {
+    document.getElementById(t).addEventListener('click', () => {
+      if (working) return;
+      for (const [t2, p2] of tabs) {
+        document.getElementById(t2).classList.toggle('on', t2 === t);
+        document.getElementById(p2).classList.toggle('on', p2 === p);
+      }
+    });
+  }
+
+  function setStatus(text, cls) {
+    statusEl.textContent = text;
+    statusEl.className = cls || '';
+  }
+  function setBusy(b) {
+    working = b;
+    bar.classList.toggle('on', b);
+    grab.disabled = b;
+  }
+
+  // ------------------------------------------------------------ from URL
+
+  grab.addEventListener('click', importFromUrl);
+  urlInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') importFromUrl(); });
+
+  async function importFromUrl() {
+    if (working) return;
+    let url = urlInput.value.trim();
+    if (!url) { setStatus('Enter a page URL first.', 'err'); return; }
+    if (!/^https?:\/\//i.test(url)) url = 'https://' + url;
+
+    const [w, h] = sizeSel.value.split('x').map(Number);
+    setBusy(true);
+    setStatus('Rendering ' + url + ' at ' + w + '×' + h + '…\nThis takes 20–60s: the page is loaded in a real browser, scrolled to pull in lazy images, then measured.');
+
+    try {
+      let res;
+      try {
+        res = await fetch(SERVICE + '/capture', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            url,
+            width: w,
+            height: h,
+            includeImages: chkImages.checked,
+            includeOffscreen: chkOffscreen.checked
+          })
+        });
+      } catch (netErr) {
+        throw new Error(
+          'Could not reach the capture service at ' + SERVICE + '.\n\n' +
+          'Start it in a terminal:\n  node capture-server/server.js\n\n' +
+          'then try again.'
+        );
+      }
+
+      const payload = await res.json().catch(() => null);
+      if (!res.ok || !payload || !payload.ok) {
+        throw new Error((payload && payload.error) || ('Capture service returned HTTP ' + res.status));
+      }
+
+      const doc = payload.doc;
+      if (!doc || doc.format !== 'h2f' || !doc.root) throw new Error('The service returned something that is not a capture.');
+      setStatus('Building layers in Figma…');
+      sendDoc(doc);
+    } catch (e) {
+      setBusy(false);
+      setStatus(String((e && e.message) || e), 'err');
+    }
+  }
+
+  // ----------------------------------------------------------- from file
 
   drop.addEventListener('click', () => { if (!working) fileInput.click(); });
   fileInput.addEventListener('change', () => { if (fileInput.files[0]) handleFile(fileInput.files[0]); });
@@ -56,14 +214,8 @@
     if (!working && e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]);
   });
 
-  function setStatus(text, cls) {
-    statusEl.textContent = text;
-    statusEl.className = cls || '';
-  }
-
   async function handleFile(file) {
-    working = true;
-    bar.classList.add('on');
+    setBusy(true);
     try {
       setStatus('Reading ' + file.name + '…');
       const buf = await file.arrayBuffer();
@@ -79,31 +231,35 @@
       setStatus('Parsing…');
       const doc = JSON.parse(text);
       if (doc.format !== 'h2f' || !doc.root) throw new Error('This is not a .h2f capture file.');
-
-      // decode image payloads to bytes for the plugin sandbox
-      const images = doc.images || {};
-      for (const id of Object.keys(images)) {
-        const item = images[id];
-        if (item.base64) {
-          item.bytes = base64ToBytes(item.base64);
-          delete item.base64;
-        }
-      }
-      setStatus('Importing into Figma…');
-      parent.postMessage({ pluginMessage: { type: 'import', doc } }, '*');
+      setStatus('Building layers in Figma…');
+      sendDoc(doc);
     } catch (e) {
-      working = false;
-      bar.classList.remove('on');
-      setStatus(String(e.message || e), 'err');
+      setBusy(false);
+      setStatus(String((e && e.message) || e), 'err');
     }
     fileInput.value = '';
   }
 
+  // ------------------------------------------------------------- shared
+
+  // Image payloads travel as base64; the plugin sandbox needs raw bytes.
+  function sendDoc(doc) {
+    const images = doc.images || {};
+    for (const id of Object.keys(images)) {
+      const item = images[id];
+      if (item.base64) {
+        item.bytes = base64ToBytes(item.base64);
+        delete item.base64;
+      }
+    }
+    parent.postMessage({ pluginMessage: { type: 'import', doc } }, '*');
+  }
+
   function base64ToBytes(b64) {
     const bin = atob(b64);
-    const bytes = new Uint8Array(bin.length);
-    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-    return bytes;
+    const out = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return out;
   }
 
   window.onmessage = (e) => {
@@ -112,14 +268,12 @@
     if (msg.type === 'status') {
       setStatus(msg.message);
     } else if (msg.type === 'done') {
-      working = false;
-      bar.classList.remove('on');
+      setBusy(false);
       let text = msg.message;
       if (msg.warnings && msg.warnings.length) text += '\n\nNotes:\n• ' + msg.warnings.join('\n• ');
       setStatus(text, 'ok');
     } else if (msg.type === 'error') {
-      working = false;
-      bar.classList.remove('on');
+      setBusy(false);
       setStatus('Import failed: ' + msg.message, 'err');
     }
   };
