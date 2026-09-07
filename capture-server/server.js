@@ -261,10 +261,15 @@ async function capture(url, width, height, opts) {
 
 // -------------------------------------------------------------------- http
 
+// The plugin iframe is not itself on localhost, so Chrome treats this as a
+// public-to-private request and preflights it: without
+// Access-Control-Allow-Private-Network the fetch is refused before it is sent.
 const CORS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'Content-Type',
-  'Access-Control-Allow-Methods': 'GET,POST,OPTIONS'
+  'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
+  'Access-Control-Allow-Private-Network': 'true',
+  'Access-Control-Max-Age': '600'
 };
 
 function json(res, code, obj) {
