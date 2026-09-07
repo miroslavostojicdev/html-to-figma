@@ -65,15 +65,24 @@
 </style>
 
 <h1>HTML to Figma Importer</h1>
-<p class="sub">Import a webpage straight from its URL, or drop a <b>.h2f</b> capture file.</p>
+<p class="sub">Drop a <b>.h2f</b> capture file, or import a webpage straight from its URL.</p>
 
 <div class="tabs">
-  <div class="tab on" id="tab-url">From URL</div>
-  <div class="tab" id="tab-file">From file</div>
+  <div class="tab on" id="tab-file">From file</div>
+  <div class="tab" id="tab-url">From URL</div>
   <div class="tab" id="tab-settings">Settings</div>
 </div>
 
-<div class="panel on" id="panel-url">
+<div class="panel on" id="panel-file">
+  <div id="drop">
+    <b>Drop your .h2f file here</b>
+    or click to browse
+  </div>
+  <input type="file" id="file" accept=".h2f,.json,application/json,application/gzip">
+  <p class="hint">Capture pages with the “HTML to Figma Capturer” Chrome extension — use this for pages behind a login.</p>
+</div>
+
+<div class="panel" id="panel-url">
   <label class="field">
     <span>Page URL</span>
     <input type="url" id="url" placeholder="https://example.com" spellcheck="false">
@@ -103,15 +112,6 @@
     Needs the local capture service running:<br>
     <code>node capture-server/server.js</code>
   </p>
-</div>
-
-<div class="panel" id="panel-file">
-  <div id="drop">
-    <b>Drop your .h2f file here</b>
-    or click to browse
-  </div>
-  <input type="file" id="file" accept=".h2f,.json,application/json,application/gzip">
-  <p class="hint">Capture pages with the “HTML to Figma Capturer” Chrome extension — use this for pages behind a login.</p>
 </div>
 
 <div class="panel" id="panel-settings">
@@ -202,7 +202,7 @@
   let working = false;
 
   // tabs
-  const tabs = [['tab-url', 'panel-url'], ['tab-file', 'panel-file'], ['tab-settings', 'panel-settings']];
+  const tabs = [['tab-file', 'panel-file'], ['tab-url', 'panel-url'], ['tab-settings', 'panel-settings']];
   for (const [t, p] of tabs) {
     document.getElementById(t).addEventListener('click', () => {
       if (working) return;
