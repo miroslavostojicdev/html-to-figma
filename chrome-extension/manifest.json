@@ -1,0 +1,15 @@
+{
+  "manifest_version": 3,
+  "name": "HTML to Figma Capturer",
+  "version": "0.1.0",
+  "description": "Capture any webpage (layout, styles, text, images) as a .h2f file and import it into Figma with the companion 'HTML to Figma Importer' plugin.",
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "HTML to Figma"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "permissions": ["scripting", "activeTab", "debugger"],
+  "host_permissions": ["<all_urls>"]
+}

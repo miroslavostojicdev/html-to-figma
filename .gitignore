@@ -1,0 +1,9 @@
+# captured output
+*.h2f
+*.h2d
+doc.json
+
+# deps / os
+node_modules/
+.DS_Store
+Thumbs.db

@@ -1,0 +1,126 @@
+<style>
+  body {
+    margin: 0; padding: 16px;
+    font: 12.5px/1.5 "Inter", system-ui, sans-serif;
+    background: var(--figma-color-bg, #fff);
+    color: var(--figma-color-text, #111);
+  }
+  h1 { font-size: 14px; margin: 0 0 4px; }
+  .sub { color: var(--figma-color-text-secondary, #777); margin: 0 0 14px; }
+  #drop {
+    border: 1.5px dashed var(--figma-color-border, #c9c9c9);
+    border-radius: 10px; padding: 34px 16px; text-align: center;
+    cursor: pointer; transition: border-color .15s, background .15s;
+    color: var(--figma-color-text-secondary, #777);
+  }
+  #drop.hover { border-color: #4f6df5; background: rgba(79, 109, 245, .06); color: #4f6df5; }
+  #drop b { color: var(--figma-color-text, #111); display: block; margin-bottom: 4px; font-size: 13px; }
+  #drop.hover b { color: #4f6df5; }
+  input[type=file] { display: none; }
+  #status { margin-top: 14px; min-height: 40px; white-space: pre-wrap; }
+  #status.err { color: #e05555; }
+  #status.ok { color: #1d9f5a; }
+  .bar { height: 4px; border-radius: 2px; background: var(--figma-color-bg-secondary, #eee); margin-top: 8px; overflow: hidden; display: none; }
+  .bar.on { display: block; }
+  .bar i { display: block; height: 100%; width: 40%; background: #4f6df5; border-radius: 2px; animation: slide 1.1s ease-in-out infinite; }
+  @keyframes slide { 0% { margin-left: -40%; } 100% { margin-left: 100%; } }
+  .hint { margin-top: 14px; font-size: 11px; color: var(--figma-color-text-tertiary, #999); }
+</style>
+
+<h1>HTML to Figma Importer</h1>
+<p class="sub">Import a <b>.h2f</b> capture made with the companion Chrome extension.</p>
+
+<div id="drop">
+  <b>Drop your .h2f file here</b>
+  or click to browse
+</div>
+<input type="file" id="file" accept=".h2f,.json,application/json,application/gzip">
+<div class="bar" id="bar"><i></i></div>
+<div id="status"></div>
+<p class="hint">Capture pages with the “HTML to Figma Capturer” Chrome extension — it saves a .h2f file to your Downloads folder.</p>
+
+<script>
+  const drop = document.getElementById('drop');
+  const fileInput = document.getElementById('file');
+  const statusEl = document.getElementById('status');
+  const bar = document.getElementById('bar');
+  let working = false;
+
+  drop.addEventListener('click', () => { if (!working) fileInput.click(); });
+  fileInput.addEventListener('change', () => { if (fileInput.files[0]) handleFile(fileInput.files[0]); });
+  drop.addEventListener('dragover', (e) => { e.preventDefault(); drop.classList.add('hover'); });
+  drop.addEventListener('dragleave', () => drop.classList.remove('hover'));
+  drop.addEventListener('drop', (e) => {
+    e.preventDefault();
+    drop.classList.remove('hover');
+    if (!working && e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]);
+  });
+
+  function setStatus(text, cls) {
+    statusEl.textContent = text;
+    statusEl.className = cls || '';
+  }
+
+  async function handleFile(file) {
+    working = true;
+    bar.classList.add('on');
+    try {
+      setStatus('Reading ' + file.name + '…');
+      const buf = await file.arrayBuffer();
+      const bytes = new Uint8Array(buf);
+      let text;
+      if (bytes[0] === 0x1f && bytes[1] === 0x8b) {
+        setStatus('Decompressing…');
+        const stream = new Blob([buf]).stream().pipeThrough(new DecompressionStream('gzip'));
+        text = await new Response(stream).text();
+      } else {
+        text = new TextDecoder().decode(bytes);
+      }
+      setStatus('Parsing…');
+      const doc = JSON.parse(text);
+      if (doc.format !== 'h2f' || !doc.root) throw new Error('This is not a .h2f capture file.');
+
+      // decode image payloads to bytes for the plugin sandbox
+      const images = doc.images || {};
+      for (const id of Object.keys(images)) {
+        const item = images[id];
+        if (item.base64) {
+          item.bytes = base64ToBytes(item.base64);
+          delete item.base64;
+        }
+      }
+      setStatus('Importing into Figma…');
+      parent.postMessage({ pluginMessage: { type: 'import', doc } }, '*');
+    } catch (e) {
+      working = false;
+      bar.classList.remove('on');
+      setStatus(String(e.message || e), 'err');
+    }
+    fileInput.value = '';
+  }
+
+  function base64ToBytes(b64) {
+    const bin = atob(b64);
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return bytes;
+  }
+
+  window.onmessage = (e) => {
+    const msg = e.data.pluginMessage;
+    if (!msg) return;
+    if (msg.type === 'status') {
+      setStatus(msg.message);
+    } else if (msg.type === 'done') {
+      working = false;
+      bar.classList.remove('on');
+      let text = msg.message;
+      if (msg.warnings && msg.warnings.length) text += '\n\nNotes:\n• ' + msg.warnings.join('\n• ');
+      setStatus(text, 'ok');
+    } else if (msg.type === 'error') {
+      working = false;
+      bar.classList.remove('on');
+      setStatus('Import failed: ' + msg.message, 'err');
+    }
+  };
+</script>
