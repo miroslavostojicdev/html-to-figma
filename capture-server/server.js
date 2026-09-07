@@ -275,7 +275,7 @@ function json(res, code, obj) {
 const truthy = (v) => v !== false && v !== 'false' && v !== '0';
 let busy = false;
 
-const server = http.createServer(async (req, res) => {
+const handler = async (req, res) => {
   if (req.method === 'OPTIONS') { res.writeHead(204, CORS); res.end(); return; }
 
   const u = new URL(req.url, 'http://localhost');
@@ -328,11 +328,34 @@ const server = http.createServer(async (req, res) => {
   } finally {
     busy = false;
   }
-});
+};
 
-server.listen(PORT, '127.0.0.1', () => {
+// Bind both loopback stacks. Figma's plugin sandbox reaches us by the name
+// "localhost", which on Windows commonly resolves to ::1 first — binding only
+// 127.0.0.1 would leave that lookup refused. Loopback only, never 0.0.0.0: this
+// service renders arbitrary URLs on request and must not be reachable from the
+// network.
+const HOSTS = ['127.0.0.1', '::1'];
+let bound = 0;
+
+function banner() {
   const chrome = findChrome();
   console.log('HTML to Figma capture service — http://localhost:' + PORT);
   console.log(chrome ? 'Chrome: ' + chrome : 'WARNING: no Chrome found — set H2F_CHROME to chrome.exe');
   console.log('Leave this running, then use "Import from URL" in the Figma plugin.');
-});
+}
+
+for (const host of HOSTS) {
+  const s = http.createServer(handler);
+  s.on('error', (e) => {
+    if (e.code === 'EADDRINUSE') {
+      console.error('Port ' + PORT + ' is already in use. Set H2F_PORT to pick another.');
+      process.exit(1);
+    }
+    // A machine without IPv6 simply has no ::1 to bind; the IPv4 listener carries it.
+    if (e.code !== 'EAFNOSUPPORT' && e.code !== 'EADDRNOTAVAIL') {
+      console.error('listen ' + host + ': ' + e.message);
+    }
+  });
+  s.listen(PORT, host, () => { if (bound++ === 0) banner(); });
+}

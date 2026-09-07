@@ -22,7 +22,7 @@ Requires **Node 22+** (it uses the built-in `WebSocket`) and Google Chrome. Noth
 node capture-server/server.js
 ```
 
-Leave that running while you use the plugin. Set `H2F_CHROME` if Chrome is somewhere unusual, or `H2F_PORT` to move it off 8787 (change `SERVICE` in `figma-plugin/ui.html` and the port in `figma-plugin/manifest.json` to match).
+Leave that running while you use the plugin. Set `H2F_CHROME` if Chrome is somewhere unusual, or `H2F_PORT` to move it off 8787 (change `SERVICE` in `figma-plugin/ui.html` and the `allowedDomains` port in `figma-plugin/manifest.json` to match — Figma accepts `http://localhost:<port>` but rejects raw IPs like `127.0.0.1`).
 
 ### Chrome extension (optional — for pages behind a login)
 1. Open `chrome://extensions`
