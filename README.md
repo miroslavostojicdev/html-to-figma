@@ -24,7 +24,18 @@ node capture-server/server.js
 
 On Windows you can just double-click `capture-server/start.cmd`.
 
-**Leave it running the whole time you use the plugin** — if the window is closed, the plugin reports *“Could not reach the capture service”*. That message means only that nothing is listening on the port; it is not a plugin or manifest problem. Set `H2F_CHROME` if Chrome is somewhere unusual, or `H2F_PORT` to move it off 8787 (change `SERVICE` in `figma-plugin/ui.html` and the `allowedDomains` port in `figma-plugin/manifest.json` to match — Figma accepts `http://localhost:<port>` but rejects raw IPs like `127.0.0.1`).
+**Leave it running the whole time you use the plugin** — if the window is closed, the plugin reports *“Could not reach the capture service”*. That message means only that nothing is listening on the port; it is not a plugin or manifest problem. The plugin looks for it at `http://localhost:8787` unless you change that under **Settings**.
+
+Environment variables:
+
+| Variable | Purpose |
+|---|---|
+| `H2F_CHROME` | Path to chrome.exe, if it is somewhere unusual |
+| `H2F_PORT` | Move it off 8787 |
+| `H2F_TOKEN` | Require a password. Put the same value in the plugin’s **Settings** tab |
+| `H2F_HOST` | Bind somewhere other than loopback — **only** together with `H2F_TOKEN` |
+
+Set `H2F_PORT` to move it off 8787 (change `SERVICE` in `figma-plugin/ui.html` and the `allowedDomains` port in `figma-plugin/manifest.json` to match — Figma accepts `http://localhost:<port>` but rejects raw IPs like `127.0.0.1`).
 
 ### Chrome extension (optional — for pages behind a login)
 1. Open `chrome://extensions`
@@ -46,6 +57,26 @@ On Windows you can just double-click `capture-server/start.cmd`.
 4. Takes roughly 20–60s: the page loads in a real browser, the viewport is set to the size you picked, the page scrolls itself to pull in lazy images, and only then is it measured.
 
 The screen size is a real viewport, not a scale factor — a responsive site returns its actual layout for that width, mobile widths get a mobile user agent, and the page height comes out however tall that layout happens to be.
+
+### Settings
+
+The **Settings** tab holds the address of the capture server and, if it needs one, the password:
+
+- **Capture server** — `http://localhost:8787` by default, or the address of a server you host.
+- **Password** — sent as `Authorization: Bearer …`; leave empty if the server has none.
+- **Test connection** tells you which of the three states you are in: server unreachable, reachable but the password was rejected, or connected.
+
+Both values are kept in Figma’s per-user `clientStorage`, so they stay on your computer. They are deliberately **not** stored with `setPluginData`, which would write them inside the `.fig` file and hand the password to anyone you shared the file with.
+
+#### Hosting the capture service for other people
+
+The service renders whatever URL it is handed, so an open one is an SSRF proxy into whatever network it sits in. It therefore **refuses to start** on a non-loopback address unless `H2F_TOKEN` is set:
+
+```
+H2F_TOKEN=$(openssl rand -hex 24) H2F_HOST=0.0.0.0 node capture-server/server.js
+```
+
+Put that token in each user’s Settings tab. Terminate TLS in front of it (a reverse proxy) if it leaves your machine — the password is a bearer token and plain HTTP exposes it.
 
 ### B. Capture a page from your own browser
 
@@ -88,6 +119,7 @@ Use this when the page needs a login, a cookie banner dismissed, or some state y
 | CSS transforms, filters, blend modes | ❌ |
 | `<input type="range">` sliders | ❌ box only — the track and thumb are browser-drawn and aren't captured |
 | iframes, closed shadow roots | ❌ skipped |
+| Per-user server address + password | ✅ **Settings** tab, stored in `clientStorage` (never in the `.fig` file) |
 | Pages behind a login, via **Import from URL** | ❌ the service uses a clean browser profile with no cookies — use the Chrome extension for those |
 
 ## Notes & limits
@@ -98,6 +130,7 @@ Use this when the page needs a login, a cookie banner dismissed, or some state y
 - Cookie/consent banners are part of the page, so they are captured too. On the URL path there is nobody to dismiss them, so expect one in the capture; the extension path lets you dismiss it first.
 - The capture service launches Chrome with a throwaway profile and `--disable-web-security`, which is what lets the page fetch its own images cross-origin (the same privilege the extension gets from `host_permissions`). That browser only ever loads the page you asked for, and it is killed when the service stops — but it is why the service binds to `127.0.0.1` only.
 - Only one capture runs at a time; a second request gets a 429 until the first finishes.
+- `networkAccess.allowedDomains` in the plugin manifest is `"*"`, because the server address is whatever the user types under Settings and cannot be known ahead of time. If you only ever use one server, narrow it to that origin — Figma accepts `http://localhost:<port>` and ordinary domains, but rejects raw IPs like `127.0.0.1`.
 - Fonts are matched by family name against fonts available in Figma. Install the page's fonts locally (or in Figma) before importing for best fidelity, otherwise Inter is substituted.
 - The `.h2f` file is just gzipped JSON — you can inspect it: `python -c "import gzip,sys;sys.stdout.buffer.write(gzip.open(sys.argv[1]).read())" page.h2f > page.json`
 - Not compatible with html.to.design's proprietary `.h2d` files.
@@ -114,6 +147,6 @@ chrome-extension/
   background.js    viewport-width driver (CDP) + image fetcher/encoder (CORS bypass, PNG re-encode, downscale)
 figma-plugin/
   manifest.json    Figma plugin manifest (no network access)
-  ui.html          URL + screen size form, file drop, gunzip, base64→bytes
+  ui.html          URL + screen size form, settings tab, file drop, gunzip, base64→bytes
   code.js          h2f → Figma nodes (fonts, fills, strokes, effects, text)
 ```

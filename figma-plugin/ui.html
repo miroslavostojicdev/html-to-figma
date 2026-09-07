@@ -22,7 +22,7 @@
 
   label.field { display: block; margin-bottom: 10px; }
   label.field span { display: block; margin-bottom: 4px; color: var(--figma-color-text-secondary, #777); }
-  input[type=url], select {
+  input[type=url], input[type=password], select {
     width: 100%; box-sizing: border-box; padding: 7px 8px;
     border: 1px solid var(--figma-color-border, #d5d5d5); border-radius: 6px;
     background: var(--figma-color-bg, #fff); color: var(--figma-color-text, #111);
@@ -37,6 +37,8 @@
     background: #4f6df5; color: #fff;
   }
   button.go:disabled { opacity: .5; cursor: default; }
+  button.go.secondary { background: var(--figma-color-bg-secondary, #eee); color: var(--figma-color-text, #111); }
+  .hint em { font-style: normal; color: var(--figma-color-text-tertiary, #999); }
   label.check { display: flex; align-items: center; gap: 7px; margin: 8px 0 10px; color: var(--figma-color-text-secondary, #777); }
   label.check input { margin: 0; }
 
@@ -68,6 +70,7 @@
 <div class="tabs">
   <div class="tab on" id="tab-url">From URL</div>
   <div class="tab" id="tab-file">From file</div>
+  <div class="tab" id="tab-settings">Settings</div>
 </div>
 
 <div class="panel on" id="panel-url">
@@ -111,11 +114,81 @@
   <p class="hint">Capture pages with the “HTML to Figma Capturer” Chrome extension — use this for pages behind a login.</p>
 </div>
 
+<div class="panel" id="panel-settings">
+  <label class="field">
+    <span>Capture server</span>
+    <input type="url" id="server" placeholder="http://localhost:8787" spellcheck="false">
+  </label>
+  <label class="field">
+    <span>Password <em>(only if your server sets one)</em></span>
+    <input type="password" id="password" placeholder="leave empty for none" spellcheck="false">
+  </label>
+  <div class="row">
+    <button class="go" id="save">Save</button>
+    <button class="go secondary" id="test">Test connection</button>
+  </div>
+  <p class="hint">
+    Stored on this computer only, in Figma’s per-user storage — it is not written into
+    the .fig file, so it is not shared with anyone you send the file to.<br><br>
+    Point this at your own machine (<code>http://localhost:8787</code>) or a server you host.
+    A server reachable from anywhere else <b>must</b> set a password: <code>H2F_TOKEN=…</code>
+  </p>
+</div>
+
 <div class="bar" id="bar"><i></i></div>
 <div id="status"></div>
 
 <script>
-  const SERVICE = 'http://localhost:8787';
+  // Filled in from the plugin's per-user storage as soon as the UI opens.
+  let settings = { server: 'http://localhost:8787', password: '' };
+
+  // A slow connection test must not overwrite whatever the user did next.
+  let statusSeq = 0;
+
+  const serverInput = document.getElementById('server');
+  const passwordInput = document.getElementById('password');
+  const saveBtn = document.getElementById('save');
+  const testBtn = document.getElementById('test');
+
+  function serviceBase() {
+    return String(settings.server || 'http://localhost:8787').trim().replace(/\/+$/, '');
+  }
+  function authHeaders() {
+    const head = { 'Content-Type': 'application/json' };
+    if (settings.password) head.Authorization = 'Bearer ' + settings.password;
+    return head;
+  }
+
+  parent.postMessage({ pluginMessage: { type: 'getSettings' } }, '*');
+
+  saveBtn.addEventListener('click', () => {
+    ++statusSeq;
+    settings = { server: serverInput.value.trim() || 'http://localhost:8787', password: passwordInput.value };
+    parent.postMessage({ pluginMessage: { type: 'saveSettings', settings } }, '*');
+  });
+
+  testBtn.addEventListener('click', async () => {
+    const base = (serverInput.value.trim() || 'http://localhost:8787').replace(/\/+$/, '');
+    const pw = passwordInput.value;
+    const mine = ++statusSeq;
+    setStatus('Testing ' + base + '…');
+    try {
+      const headers = pw ? { Authorization: 'Bearer ' + pw } : {};
+      const r = await fetch(base + '/health', { headers });
+      const j = await r.json().catch(() => null);
+      if (mine !== statusSeq) return;   // superseded while we waited
+      if (r.status === 401) {
+        setStatus('Reached the server, but it rejected the password.', 'err');
+      } else if (r.ok && j && j.ok) {
+        setStatus('Connected. ' + (j.authRequired ? 'Password accepted.' : 'This server has no password set.'), 'ok');
+      } else {
+        setStatus('Server answered with HTTP ' + r.status + '.', 'err');
+      }
+    } catch (e) {
+      if (mine !== statusSeq) return;
+      setStatus('Could not reach ' + base + '.\n\nIf it runs on this computer, start it with:\n  node capture-server/server.js', 'err');
+    }
+  });
 
   const statusEl = document.getElementById('status');
   const bar = document.getElementById('bar');
@@ -129,7 +202,7 @@
   let working = false;
 
   // tabs
-  const tabs = [['tab-url', 'panel-url'], ['tab-file', 'panel-file']];
+  const tabs = [['tab-url', 'panel-url'], ['tab-file', 'panel-file'], ['tab-settings', 'panel-settings']];
   for (const [t, p] of tabs) {
     document.getElementById(t).addEventListener('click', () => {
       if (working) return;
@@ -168,9 +241,9 @@
     try {
       let res;
       try {
-        res = await fetch(SERVICE + '/capture', {
+        res = await fetch(serviceBase() + '/capture', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: authHeaders(),
           body: JSON.stringify({
             url,
             width: w,
@@ -181,13 +254,16 @@
         });
       } catch (netErr) {
         throw new Error(
-          'Could not reach the capture service at ' + SERVICE + '.\n\n' +
-          'Start it in a terminal:\n  node capture-server/server.js\n\n' +
-          'then try again.'
+          'Could not reach the capture service at ' + serviceBase() + '.\n\n' +
+          'If it runs on this computer, start it in a terminal:\n  node capture-server/server.js\n\n' +
+          'Otherwise check the address under Settings.'
         );
       }
 
       const payload = await res.json().catch(() => null);
+      if (res.status === 401) {
+        throw new Error('That capture server rejected the password. Check it under Settings.');
+      }
       if (!res.ok || !payload || !payload.ok) {
         throw new Error((payload && payload.error) || ('Capture service returned HTTP ' + res.status));
       }
@@ -265,7 +341,17 @@
   window.onmessage = (e) => {
     const msg = e.data.pluginMessage;
     if (!msg) return;
-    if (msg.type === 'status') {
+    if (msg.type === 'settings') {
+      settings = msg.settings || settings;
+      serverInput.value = settings.server || '';
+      passwordInput.value = settings.password || '';
+    } else if (msg.type === 'settingsSaved') {
+      if (msg.error) setStatus('Could not save settings: ' + msg.error, 'err');
+      else {
+        settings = msg.settings || settings;
+        setStatus(msg.message, 'ok');
+      }
+    } else if (msg.type === 'status') {
       setStatus(msg.message);
     } else if (msg.type === 'done') {
       setBusy(false);

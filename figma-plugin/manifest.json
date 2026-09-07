@@ -10,8 +10,8 @@
   "documentAccess": "dynamic-page",
   "networkAccess": {
     "allowedDomains": [
-      "http://localhost:8787"
+      "*"
     ],
-    "reasoning": "Talks to the local capture service (capture-server/) that renders a URL in headless Chrome. Nothing is sent anywhere else."
+    "reasoning": "Calls the capture service that renders a page for import. The address is set by the user under Settings — usually http://localhost:8787, or a server they host themselves — so the domain cannot be known in advance. The plugin contacts nothing else."
   }
 }

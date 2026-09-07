@@ -14,9 +14,15 @@ const http = require('http');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const crypto = require('crypto');
 const { spawn } = require('child_process');
 
 const PORT = Number(process.env.H2F_PORT || 8787);
+// Set H2F_TOKEN to require a password. Leave it unset for a purely local setup.
+const TOKEN = String(process.env.H2F_TOKEN || '');
+// Only bind beyond loopback deliberately — and never without a password, since
+// this service fetches whatever URL it is handed.
+const HOST = String(process.env.H2F_HOST || '').trim();
 const EXT_DIR = path.join(__dirname, '..', 'chrome-extension');
 const NAV_TIMEOUT = 45000;
 
@@ -266,7 +272,7 @@ async function capture(url, width, height, opts) {
 // Access-Control-Allow-Private-Network the fetch is refused before it is sent.
 const CORS = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'Content-Type',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
   'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
   'Access-Control-Allow-Private-Network': 'true',
   'Access-Control-Max-Age': '600'
@@ -278,6 +284,16 @@ function json(res, code, obj) {
 }
 
 const truthy = (v) => v !== false && v !== 'false' && v !== '0';
+
+// Constant-time compare so a wrong password cannot be guessed byte by byte.
+function tokenOk(req) {
+  if (!TOKEN) return true;
+  const raw = String(req.headers.authorization || '');
+  const given = raw.replace(/^Bearer\s+/i, '');
+  const a = Buffer.from(given);
+  const b = Buffer.from(TOKEN);
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
 let busy = false;
 
 const handler = async (req, res) => {
@@ -285,7 +301,13 @@ const handler = async (req, res) => {
 
   const u = new URL(req.url, 'http://localhost');
   if (u.pathname === '/health') {
-    return json(res, 200, { ok: true, service: 'h2f-capture', port: PORT, busy });
+    if (!tokenOk(req)) {
+      return json(res, 401, { ok: false, error: 'Wrong password.', authRequired: true });
+    }
+    return json(res, 200, { ok: true, service: 'h2f-capture', port: PORT, busy, authRequired: !!TOKEN });
+  }
+  if (!tokenOk(req)) {
+    return json(res, 401, { ok: false, error: 'Wrong password for this capture server.', authRequired: true });
   }
   if (u.pathname !== '/capture') {
     return json(res, 404, { ok: false, error: 'Not found. Use /capture or /health.' });
@@ -340,13 +362,22 @@ const handler = async (req, res) => {
 // 127.0.0.1 would leave that lookup refused. Loopback only, never 0.0.0.0: this
 // service renders arbitrary URLs on request and must not be reachable from the
 // network.
-const HOSTS = ['127.0.0.1', '::1'];
+const HOSTS = HOST ? [HOST] : ['127.0.0.1', '::1'];
 let bound = 0;
+
+const LOOPBACK = /^(127\.|::1$|localhost$)/i;
+if (HOST && !LOOPBACK.test(HOST) && !TOKEN) {
+  console.error('Refusing to listen on ' + HOST + ' without a password.');
+  console.error('This service renders any URL it is given, so an open one is an SSRF proxy.');
+  console.error('Set H2F_TOKEN=<a long random string> and put the same value in the plugin settings.');
+  process.exit(1);
+}
 
 function banner() {
   const chrome = findChrome();
   console.log('HTML to Figma capture service — http://localhost:' + PORT);
   console.log(chrome ? 'Chrome: ' + chrome : 'WARNING: no Chrome found — set H2F_CHROME to chrome.exe');
+  console.log(TOKEN ? 'Password: required (H2F_TOKEN is set)' : 'Password: none — local use only');
   console.log('Leave this running, then use "Import from URL" in the Figma plugin.');
 }
 

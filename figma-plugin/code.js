@@ -11,9 +11,44 @@ let imageHashes = {};
 let svgImages = {};
 let builtCount = 0;
 
+// Settings live in clientStorage, which is per-user and local to this machine.
+// Deliberately not setPluginData: that rides along inside the .fig file, so a
+// shared document would hand everyone the password.
+const SETTINGS_KEY = 'h2f.settings';
+const DEFAULT_SETTINGS = { server: 'http://localhost:8787', password: '' };
+
+async function loadSettings() {
+  try {
+    const s = await figma.clientStorage.getAsync(SETTINGS_KEY);
+    return Object.assign({}, DEFAULT_SETTINGS, s || {});
+  } catch (e) {
+    return Object.assign({}, DEFAULT_SETTINGS);
+  }
+}
+
 figma.ui.onmessage = async (msg) => {
   if (!msg) return;
   if (msg.type === 'close') { figma.closePlugin(); return; }
+
+  if (msg.type === 'getSettings') {
+    post('settings', '', { settings: await loadSettings() });
+    return;
+  }
+
+  if (msg.type === 'saveSettings') {
+    const s = {
+      server: String((msg.settings && msg.settings.server) || '').trim() || DEFAULT_SETTINGS.server,
+      password: String((msg.settings && msg.settings.password) || '')
+    };
+    try {
+      await figma.clientStorage.setAsync(SETTINGS_KEY, s);
+      post('settingsSaved', 'Saved on this computer.', { settings: s });
+    } catch (e) {
+      post('settingsSaved', '', { error: String((e && e.message) || e) });
+    }
+    return;
+  }
+
   if (msg.type === 'import') {
     try {
       await importDoc(msg.doc);
